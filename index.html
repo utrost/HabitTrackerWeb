@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Stoic Uwe</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{--bg:#0d0d1a;--card:#15152d;--card2:#1a1a35;--border:#222248;--text:#e0e0f0;--muted:#6870a0;--accent:#6c5ce7;--accent2:#5a4bd6;--green:#2ecc71;--green2:rgba(46,204,113,.15);--red:#e74c3c;--red2:rgba(231,76,60,.15);--yellow:#f39c12;--yellow2:rgba(243,156,18,.15);--blue:#3498db;--blue2:rgba(52,152,219,.15);--radius:14px}
+html,body{height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);padding-bottom:80px;-webkit-font-smoothing:antialiased;user-select:none}
+
+/* HEADER */
+.hdr{padding:1.2rem 1rem .6rem;text-align:center;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:10}
+.hdr h1{font-size:1.15rem;font-weight:700;letter-spacing:-.4px}
+.hdr h1 span{color:var(--accent)}
+.hdr .sub{color:var(--muted);font-size:.7rem;margin-top:.2rem}
+.stats{display:flex;gap:.5rem;justify-content:center;margin-top:.6rem}
+.st{text-align:center;background:var(--card);padding:.35rem .55rem;border-radius:10px;min-width:64px}
+.st .n{font-size:1.05rem;font-weight:700}
+.st .l{font-size:.55rem;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+
+/* WEEK */
+.wk{display:flex;gap:3px;margin:.6rem .8rem;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.wk::-webkit-scrollbar{display:none}
+.wd{flex:0 0 calc((100% - 18px)/7);background:var(--card);border-radius:10px;padding:.3rem .1rem;text-align:center;font-size:.5rem;color:var(--muted);min-width:38px}
+.wd .dot{width:7px;height:7px;border-radius:50%;margin:2px auto;background:var(--border)}
+.wd .dot.ok{background:var(--green)}
+.wd .dot.part{background:var(--yellow)}
+.wd .dot.miss{background:var(--red);opacity:.3}
+.wd.now{background:var(--accent);color:#fff}
+.wd.now .dot{background:rgba(255,255,255,.35)}
+
+/* PAGES */
+.pg{display:none;padding:.8rem}
+.pg.on{display:block}
+
+/* HABIT CARD */
+.hc{background:var(--card);border-radius:var(--radius);padding:.7rem .7rem;margin-bottom:.5rem;display:flex;align-items:center;gap:.6rem}
+.hi{font-size:1.5rem;width:2.2rem;text-align:center;flex-shrink:0}
+.hn{font-weight:600;font-size:.9rem;margin-bottom:.15rem}
+.hd{font-size:.68rem;color:var(--muted)}
+.hsk{font-size:.65rem;color:var(--yellow);margin-top:.15rem}
+
+/* Boolean toggle */
+.tog{width:52px;height:30px;border-radius:15px;border:2px solid var(--border);background:var(--bg);position:relative;cursor:pointer;flex-shrink:0;transition:all .2s}
+.tog::after{content:'';position:absolute;width:24px;height:24px;border-radius:12px;background:var(--muted);top:1px;left:1px;transition:all .2s}
+.tog.on{border-color:var(--green);background:var(--green2)}
+.tog.on::after{background:var(--green);left:25px}
+
+/* Number input */
+.nr{display:flex;align-items:center;gap:.3rem;flex-shrink:0}
+.ni{width:60px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:.3rem;font-size:.85rem;text-align:center;outline:none;-moz-appearance:textfield}
+.ni::-webkit-inner-spin-button,.ni::-webkit-outer-spin-button{-webkit-appearance:none}
+.ni:focus{border-color:var(--accent)}
+.nb{width:38px;height:30px;border-radius:8px;border:none;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.nb.m{background:var(--red2);color:var(--red)}
+.nb.p{background:var(--green2);color:var(--green)}
+.nb:active{transform:scale(.9)}
+.ns{width:30px;height:30px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:.85rem;cursor:pointer}
+
+/* Quick buttons */
+.qb{display:flex;gap:.25rem;margin-top:.25rem;flex-wrap:wrap}
+.qbb{padding:.2rem .45rem;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:.62rem;cursor:pointer;white-space:nowrap}
+.qbb:active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* FAB */
+.fab{position:fixed;bottom:78px;right:16px;width:50px;height:50px;border-radius:25px;background:var(--accent);color:#fff;font-size:1.6rem;border:none;cursor:pointer;box-shadow:0 4px 16px rgba(108,92,231,.45);display:flex;align-items:center;justify-content:center;z-index:90;transition:transform .15s}
+.fab:active{transform:scale(.88)}
+
+/* MODAL */
+.mo{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;display:none;align-items:flex-end;justify-content:center}
+.mo.show{display:flex}
+.md{background:var(--card);border-radius:16px 16px 0 0;padding:1.2rem 1rem 2rem;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;animation:slideUp .2s ease}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.md h3{margin-bottom:.8rem;font-size:1.05rem}
+.md label{display:block;font-size:.7rem;color:var(--muted);margin-bottom:.2rem;margin-top:.6rem}
+.md input,.md select{width:100%;padding:.5rem .6rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:.9rem;outline:none}
+.md input:focus,.md select:focus{border-color:var(--accent)}
+.ma{display:flex;gap:.5rem;margin-top:1rem}
+.ma button{flex:1;padding:.6rem;border-radius:8px;border:none;font-size:.9rem;font-weight:600;cursor:pointer}
+.ma .bc{background:var(--bg);color:var(--muted)}
+.ma .bs{background:var(--accent);color:#fff}
+
+/* BOTTOM NAV */
+.bn{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--border);display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom,0)}
+.nv{flex:1;display:flex;flex-direction:column;align-items:center;padding:.45rem 0 .3rem;cursor:pointer;color:var(--muted);font-size:.55rem;border:none;background:none}
+.nv.on{color:var(--accent)}
+.nv .ni2{font-size:1.25rem;margin-bottom:.15rem}
+.nv:active .ni2{transform:scale(1.15)}
+
+/* WEIGHt */
+.wbc{background:var(--card);border-radius:var(--radius);padding:1rem;text-align:center;margin-bottom:.8rem}
+.wbg{font-size:2.5rem;font-weight:700}
+.wtr{font-size:.85rem;margin-top:.2rem}
+.wtr.up{color:var(--red)}.wtr.dn{color:var(--green)}.wtr.sm{color:var(--muted)}
+.wir{display:flex;gap:.4rem;justify-content:center;margin-top:.6rem}
+.wi{width:90px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:.5rem;text-align:center;font-size:1.2rem;outline:none;-moz-appearance:textfield}
+.wi::-webkit-inner-spin-button,.wi::-webkit-outer-spin-button{-webkit-appearance:none}
+.wi:focus{border-color:var(--accent)}
+.wsv{padding:.5rem 1.2rem;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:.9rem;font-weight:600;cursor:pointer}
+canvas{width:100%;height:180px;background:var(--card);border-radius:var(--radius);margin-top:.8rem;padding:.5rem}
+
+/* JOURNAL */
+.je{background:var(--card);border-radius:var(--radius);padding:.7rem .8rem;margin-bottom:.5rem}
+.jd{font-size:.65rem;color:var(--muted);font-weight:600;margin-bottom:.3rem}
+.jt{font-size:.85rem;line-height:1.5;word-break:break-word}
+.ji{width:100%;min-height:80px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:.6rem;font-size:.9rem;resize:none;outline:none;font-family:inherit;margin-bottom:.5rem}
+.ji:focus{border-color:var(--accent)}
+
+/* HISTORY */
+.hh{background:var(--card);border-radius:var(--radius);padding:.6rem .8rem;margin-bottom:.5rem}
+.hh .hh1{display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem}
+.dots{display:flex;gap:2px;flex-wrap:wrap}
+.dots .dt{width:10px;height:10px;border-radius:2px;background:var(--border);transition:background .1s}
+.dots .dt.ok{background:var(--green)}
+.dots .dt.vl{background:var(--blue)}
+
+/* FILL RATE */
+.fr{display:flex;align-items:center;gap:.3rem;margin-top:.3rem}
+.fr-bar{flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.fr-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .3s}
+.fr-txt{font-size:.6rem;color:var(--muted);min-width:30px;text-align:right}
+
+/* EMPTY */
+.emp{text-align:center;padding:3rem 1rem;color:var(--muted)}
+.emp .ei{font-size:2.5rem;margin-bottom:.5rem;opacity:.5}
+.emp .et{font-size:.85rem;line-height:1.4}
+
+/* DELETE */
+.del{background:var(--red2);color:var(--red);border:none;border-radius:6px;padding:.3rem .5rem;font-size:.75rem;cursor:pointer;flex-shrink:0}
+.del:active{background:var(--red);color:#fff}
+
+/* TOAST */
+.toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-60px);padding:.45rem 1rem;border-radius:10px;font-size:.78rem;font-weight:500;z-index:300;transition:transform .3s ease;background:var(--green2);color:var(--green);border:1px solid var(--green)}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+/* WEIGHT HISTORY ROW */
+.whr{display:flex;justify-content:space-between;padding:.5rem .8rem;border-bottom:1px solid var(--border);font-size:.8rem}
+.whd{color:var(--muted);flex-shrink:0;width:80px}
+.whv{flex:1}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1>🏛️ Stoic <span>Uwe</span></h1>
+  <div class="sub" id="hdrSub">Laden…</div>
+  <div class="stats" id="hdrStats"></div>
+</div>
+
+<div class="wk" id="wk"></div>
+
+<div class="pg on" id="pgToday"></div>
+<div class="pg" id="pgHistory"></div>
+<div class="pg" id="pgWeight"></div>
+<div class="pg" id="pgJournal"></div>
+
+<button class="fab" id="fab">+</button>
+
+<!-- ADD HABIT MODAL -->
+<div class="mo" id="addMo" onclick="if(event.target===this)closeMo()">
+<div class="md">
+  <h3>➕ Neues Habit</h3>
+  <label>Name</label>
+  <input type="text" id="iLbl" placeholder="z.B. Meditation, Lesen…">
+  <div style="display:flex;gap:.5rem">
+    <div style="flex:1"><label>Icon</label><input type="text" id="iIco" value="⬜" maxlength="2"></div>
+    <div style="flex:1"><label>Einheit</label><input type="text" id="iUnt" placeholder="min,km…"></div>
+  </div>
+  <label>Typ</label>
+  <select id="iTyp">
+    <option value="number">Zahl</option>
+    <option value="boolean">Ja/Nein</option>
+  </select>
+  <div class="ma">
+    <button class="bc" onclick="closeMo()">Abbrechen</button>
+    <button class="bs" onclick="addHabit()">Erstellen</button>
+  </div>
+</div></div>
+
+<!-- Bottom nav -->
+<nav class="bn">
+  <button class="nv on" data-pg="Today" onclick="nav(this)"><span class="ni2">📋</span>Heute</button>
+  <button class="nv" data-pg="History" onclick="nav(this)"><span class="ni2">📊</span></button>
+  <button class="nv" data-pg="Weight" onclick="nav(this)"><span class="ni2">⚖️</span></button>
+  <button class="nv" data-pg="Journal" onclick="nav(this)"><span class="ni2">📓</span></button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<footer style="text-align:center;padding:1rem .5rem 5rem;color:var(--muted);font-size:.6rem">
+  <a href="/dashboard/" style="color:var(--accent);text-decoration:none">📊 Dashboard</a>
+</footer>
+
+<script>
+const T = new Date().toISOString().slice(0,10);
+const DL = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+let D = {habits:[],overview:{}};
+
+// ── fetch ──
+async function api(m,u,b){
+  const r = await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):null});
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function load(){
+  try{
+    const [ov,h] = await Promise.all([
+      api('GET','/api/overview'),
+      api('GET','/api/habits')
+    ]);
+    D={habits:h,overview:ov};
+    R();
+  }catch(e){
+    console.error(e);
+    toast('❌ '+e.message);
+  }
+}
+
+async function R(){
+  await load();
+  hdr();
+  wk();
+  today();
+  hist();
+  wgt();
+  jourList();
+}
+
+// ── nav ──
+function nav(b){
+  document.querySelectorAll('.nv').forEach(n=>n.classList.remove('on'));
+  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
+  b.classList.add('on');
+  document.getElementById('pg'+b.dataset.pg).classList.add('on');
+}
+
+// ── header ──
+function hdr(){
+  const o=D.overview;
+  const p=o.today_total>0?Math.round(o.today_done/o.today_total*100):0;
+  document.getElementById('hdrSub').textContent = p===100?'✨ Alle erledigt!':`${o.today_done}/${o.today_total} heute — ${p}%`;
+  document.getElementById('hdrStats').innerHTML=`
+    <div class="st"><div class="n" style="color:${p>=100?'var(--green)':'var(--accent)'}">${p}%</div><div class="l">Heute</div></div>
+    <div class="st"><div class="n">${o.today_done}/${o.today_total}</div><div class="l">Erledigt</div></div>
+    <div class="st"><div class="n">${o.current_weight??'—'}kg</div><div class="l">Gewicht</div></div>`;
+}
+
+// ── week ──
+function wk(){
+  let h='';
+  for(let i=6;i>=0;i--){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const ds=d.toISOString().slice(0,10);
+    const isT=ds===T;
+    let done=0;
+    D.habits.forEach(x=>{if(x.entries&&x.entries[ds]!=null)done++;});
+    const tot=D.habits.length;
+    const rate=tot>0?done/tot:0;
+    const dc=rate>=.5?rate>=1?'ok':'part':'miss';
+    h+=`<div class="wd${isT?' now':''}"><div>${isT?'He':DL[d.getDay()]}</div><div class="dot ${dc}"></div><div>${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}</div></div>`;
+  }
+  document.getElementById('wk').innerHTML=h;
+}
+
+// ── TODAY ──
+function today(){
+  if(!D.habits.length){
+    document.getElementById('pgToday').innerHTML='<div class="emp"><div class="ei">🎯</div><div class="et">Noch keine Habits.<br>Tippe + zum Starten.</div></div>';
+    return;
+  }
+  let h='';
+  D.habits.forEach(x=>{
+    const v=x.entries&&x.entries[T];
+    const bool=x.type==='boolean';
+    const done=v!=null;
+    let ui='';
+    if(bool){
+      ui=`<div class="tog${done?' on':''}" onclick="tog('${x.slug}')"></div>`;
+    }else{
+      const sc=shortcuts(x);
+      ui=`<div>
+        <div class="nr">
+          <button class="nb m" onclick="nudge('${x.slug}',-1)">−</button>
+          <input class="ni" id="i-${x.slug}" type="text" inputmode="decimal" value="${done?v:''}" placeholder="${x.unit||'…'}">
+          <button class="nb p" onclick="nudge('${x.slug}',1)">+</button>
+          <button class="ns" onclick="trk('${x.slug}')">✓</button>
+        </div>
+        ${sc?`<div class="qb">${sc}</div>`:''}</div>`;
+    }
+    h+=`<div class="hc">
+      <div class="hi">${x.icon||'⬜'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><div class="hn">${x.label}</div>
+          <div class="hd">${done?'✅ '+(typeof v==='number'?v:v):(x.inverted?'⚠️ Noch nicht':'🔲 Noch nicht')}</div>
+          ${x.streak>0?`<div class="hsk">🔥 ${x.streak} Tage · Best: ${x.max_streak}</div>`:''}</div>
+        </div>
+        ${ui}
+        <div class="fr"><div class="fr-bar"><div class="fr-fill" style="width:${x.total_entries>0?Math.min(100,x.total_entries/30*100):0}%;background:${x.streak>=7?'var(--green)':x.streak>0?'var(--yellow)':'var(--border)'}"></div></div><div class="fr-txt">${x.total_entries} Tage</div></div>
+      </div>
+      <button class="del" onclick="delH('${x.slug}')">✕</button>
+    </div>`;
+  });
+  document.getElementById('pgToday').innerHTML=h;
+}
+
+function shortcuts(x){
+  const u=(x.unit||'').toLowerCase();
+  if(u.includes('min')||u.includes('minute')) return [5,10,15,20,30,45,60].map(v=>`<button class="qbb" onclick="qtrk('${x.slug}',${v})">${v}m</button>`).join('');
+  if(u.includes('km')) return [1,3,5,10].map(v=>`<button class="qbb" onclick="qtrk('${x.slug}',${v})">${v}</button>`).join('');
+  if(u.includes('glas')||u.includes('liter')) return [1,2,3,4,5,6,8].map(v=>`<button class="qbb" onclick="qtrk('${x.slug}',${v})">${v}</button>`).join('');
+  if(u.includes('schritt')) return [5000,8000,10000,12000].map(v=>`<button class="qbb" onclick="qtrk('${x.slug}',${v})">${v/1000}k</button>`).join('');
+  if(u.includes('kg')||!u) return [0.5,1,1.5,2].map(v=>`<button class="qbb" onclick="qtrk('${x.slug}',${v})">${v}</button>`).join('');
+  return '';
+}
+
+async function tog(slug){
+  try{await api('PUT','/api/track',{slug});toast('✅');await R();}catch(e){toast('❌ '+e.message);}
+}
+
+async function trk(slug){
+  const el=document.getElementById('i-'+slug);
+  const v=el?el.value.trim():'';
+  if(!v)return;
+  try{await api('PUT','/api/track',{slug,value:parseFloat(v)});toast('✅');await R();}catch(e){toast('❌ '+e.message);}
+}
+
+async function qtrk(slug,v){
+  try{const el=document.getElementById('i-'+slug);if(el)el.value=v;await api('PUT','/api/track',{slug,value:parseFloat(v)});toast('✅');await R();}catch(e){toast('❌ '+e.message);}
+}
+
+function nudge(slug,d){
+  const el=document.getElementById('i-'+slug);
+  if(!el)return;
+  let v=parseFloat(el.value)||0;
+  v=Math.max(0,+(v+d).toFixed(1));
+  el.value=v;
+}
+
+async function delH(slug){
+  if(!confirm('Habit löschen? (Daten bleiben in backups)'))return;
+  try{await api('DELETE','/api/habit/'+slug);toast('🗑️');await R();}catch(e){toast('❌ '+e.message);}
+}
+
+// ── ADD HABIT ──
+document.getElementById('fab').onclick=()=>document.getElementById('addMo').classList.add('show');
+function closeMo(){document.getElementById('addMo').classList.remove('show');document.getElementById('iLbl').value='';}
+
+async function addHabit(){
+  const lbl=document.getElementById('iLbl').value.trim();
+  if(!lbl){alert('Name eingeben!');return;}
+  try{
+    await api('POST','/api/habit',{
+      label:lbl,
+      icon:document.getElementById('iIco').value||'⬜',
+      unit:document.getElementById('iUnt').value||'',
+      type:document.getElementById('iTyp').value
+    });
+    closeMo();toast('🎉 '+lbl);await R();
+  }catch(e){toast('❌ '+e.message);}
+}
+
+// ── HISTORY ──
+function hist(){
+  if(!D.habits.length){
+    document.getElementById('pgHistory').innerHTML='<div class="emp"><div class="ei">📊</div><div class="et">Noch keine Daten.</div></div>';
+    return;
+  }
+  let h='<div style="font-size:.8rem;font-weight:600;margin-bottom:.5rem;padding-left:.2rem">Letzte 30 Tage</div>';
+  D.habits.forEach(x=>{
+    const e=x.entries||{};
+    let dots='';
+    for(let i=29;i>=0;i--){
+      const d=new Date();d.setDate(d.getDate()-i);
+      const ds=d.toISOString().slice(0,10);
+      const v=e[ds];
+      const cls=v!=null?(x.type==='boolean'?'ok':'vl'):'';
+      dots+=`<div class="dt ${cls}" title="${ds}: ${v!=null?v:'—'}"></div>`;
+    }
+    h+=`<div class="hh">
+      <div class="hh1"><span>${x.icon}</span><span style="font-weight:600;font-size:.85rem">${x.label}</span>
+      <span style="margin-left:auto;font-size:.65rem;color:var(--yellow)">${x.streak>0?'🔥'+x.streak:''}</span>
+      ${x.max_streak>0?`<span style="font-size:.6rem;color:var(--muted)"> · max: ${x.max_streak}</span>`:''}</div>
+      <div class="dots">${dots}</div>
+    </div>`;
+  });
+  document.getElementById('pgHistory').innerHTML=h;
+}
+
+// ── WEIGHT ──
+function wgt(){
+  const o=D.overview;
+  const cw=o.current_weight,sw=o.start_weight,tw=o.target_weight,trend=o.weight_trend;
+  let tH='<div class="wtr sm">—</div>';
+  if(trend!=null){
+    const cls=trend>0?'up':trend<0?'dn':'sm';
+    tH=`<div class="wtr ${cls}">${trend>0?'↑':trend<0?'↓':'→'} ${Math.abs(trend).toFixed(1)} kg vs letzte Woche</div>`;
+  }
+  const rem=cw!=null?(cw-tw).toFixed(1):'—';
+  const progress=sw&&tw?Math.max(0,Math.min(100,Math.round((sw-cw)/(sw-tw)*100))):0;
+  document.getElementById('pgWeight').innerHTML=`
+    <div class="wbc">
+      <div class="wbg">${cw!=null?cw:'—'}</div>
+      <div style="color:var(--muted);font-size:.75rem;margin-bottom:.5rem">kg</div>
+      ${tH}
+      <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);margin-top:.4rem">
+        <span>Start: ${sw||'?'} kg</span><span>Ziel: ${tw||'?'} kg</span>
+      </div>
+      <div style="font-size:.7rem;color:var(--muted);margin-top:.2rem">Noch: ${rem} kg (${progress}% erreicht)</div>
+      <div style="margin-top:.4rem;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:${progress}%;background:${progress>=50?'var(--green)':'var(--accent)'};border-radius:3px;transition:width .5s"></div>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:.6rem">
+      <div class="wir" style="display:flex;justify-content:center">
+        <input class="wi" id="wInp" type="text" inputmode="decimal" placeholder="kg" style="width:100px">
+        <button class="wsv" onclick="savW()">💾 Speichern</button>
+      </div>
+    </div>
+    <canvas id="wChart"></canvas>
+    <div id="wList"></div>`;
+  drawChart();
+  wList();
+}
+
+async function savW(){
+  const el=document.getElementById('wInp');
+  if(!el||!el.value.trim())return;
+  try{await api('PUT','/api/weight',{weight:parseFloat(el.value)});
+    toast('⚖️ '+el.value.trim()+' kg gespeichert');
+    el.value='';await R();}
+  catch(e){toast('❌ '+e.message);}
+}
+
+function drawChart(){
+  const c=document.getElementById('wChart');
+  if(!c||!D.habits)return;
+  const gw=D.habits.find(x=>x.slug==='gewicht');
+  if(!gw||!gw.entries||!Object.keys(gw.entries).length){
+    c.getContext('2d').fillStyle='#6870a0';
+    c.getContext('2d').font='13px sans-serif';
+    c.getContext('2d').textAlign='center';
+    c.getContext('2d').fillText('Noch keine Gewichtseinträge',c.parentElement.offsetWidth/2,90);
+    return;
+  }
+  const ctx=c.getContext('2d');
+  const W=c.offsetWidth-10,H=180;
+  c.width=W;c.height=H;
+  ctx.clearRect(0,0,W,H);
+  const pts=Object.entries(gw.entries).filter(([k,v])=>typeof v==='number').sort((a,b)=>a[0].localeCompare(b[0]));
+  const vals=pts.map(p=>p[1]);
+  const tw=D.overview.target_weight||82;
+  const mn=Math.min(...vals,tw)-1,mx=Math.max(...vals)+1;
+  const pad={t:15,b:25,l:40,r:10},cw=W-pad.l-pad.r,ch=H-pad.t-pad.b;
+  const yOf=v=>pad.t+ch-((v-mn)/(mx-mn))*ch,xOf=i=>pad.l+(i/Math.max(pts.length-1,1))*cw;
+  ctx.strokeStyle='#222248';ctx.lineWidth=.5;ctx.fillStyle='#6870a0';ctx.font='9px monospace';ctx.textAlign='right';
+  for(let v=Math.ceil(mn);v<=Math.floor(mx);v++){const y=yOf(v);ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();ctx.fillText(v,pad.l-4,y+3);}
+  const tY=yOf(tw);ctx.strokeStyle='#2ecc71';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(pad.l,tY);ctx.lineTo(W-pad.r,tY);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#2ecc71';ctx.font='8px sans-serif';ctx.textAlign='left';ctx.fillText('Ziel: '+tw+'kg',pad.l+2,tY-4);
+  ctx.strokeStyle='#3498db';ctx.lineWidth=2;ctx.setLineDash([]);ctx.beginPath();
+  pts.forEach((p,i)=>{const x=xOf(i),y=yOf(p[1]);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();
+  pts.forEach((p,i)=>{const x=xOf(i),y=yOf(p[1]);ctx.fillStyle='#3498db';ctx.beginPath();ctx.arc(x,y,3.5,0,Math.PI*2);ctx.fill();ctx.fillStyle='#6870a0';ctx.font='8px sans-serif';ctx.textAlign='center';if(pts.length<=20||i%Math.ceil(pts.length/10)===0||i===pts.length-1){const pa=p[0].split('-');ctx.fillText(pa[2]+'.'+pa[1],x,H-3);}});
+}
+
+function wList(){
+  const gw=D.habits.find(x=>x.slug==='gewicht');
+  if(!gw||!gw.entries)return;
+  const pts=Object.entries(gw.entries).filter(([k,v])=>typeof v==='number').sort((a,b)=>b[0].localeCompare(a[0]));
+  let h='';
+  pts.forEach(([d,v])=>{
+    const prev=pts.find(([dd])=>dd<d);
+    const diff=prev?'':((v-prev[1])>0?' ↑'+((v-prev[1]).toFixed(1)):((v-prev[1])<0?' ↓'+(Math.abs(v-prev[1]).toFixed(1)):''));
+    h+=`<div class="whr"><div class="whd">${d.slice(8)}.${d.slice(5,7)}</div><div class="whv" style="font-weight:600">${v} kg</div><div style="color:var(--muted);font-size:.75rem">${diff}</div></div>`;
+  });
+  const el=document.getElementById('wList');
+  if(el)el.innerHTML=h;
+}
+
+// ── JOURNAL ──
+async function jourList(){
+  let entries=[];
+  try{entries=await api('GET','/api/journal');}catch(e){}
+  let h=`<textarea class="ji" id="jInp" placeholder="Wie war dein Tag?"></textarea>
+    <button class="wsv" style="width:100%;margin-bottom:1rem" onclick="savJ()">💾 Eintrag</button>`;
+  if(!entries.length){
+    h+='<p style="text-align:center;color:var(--muted);font-size:.8rem">Noch keine Einträge.</p>';
+  }else{
+    entries.forEach(([d,txt])=>{
+      h+=`<div class="je"><div class="jd">${d}</div><div class="jt">${txt.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div></div>`;
+    });
+  }
+  document.getElementById('pgJournal').innerHTML=h;
+}
+
+async function savJ(){
+  const el=document.getElementById('jInp');
+  if(!el||!el.value.trim())return;
+  try{await api('POST','/api/journal',{text:el.value.trim(),date:T});toast('📓 gespeichert');await R();}
+  catch(e){toast('❌ '+e.message);}
+}
+
+// ── toast ──
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),1500);
+}
+
+// ── init ──
+load();
+</script>
+</body>
+</html>
