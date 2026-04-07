@@ -111,6 +111,197 @@ def _max_streak(entries):
 def _deploy():
     return
 
+# ──── gamification helpers ──────────────────────────────────────────
+
+LEVELS = [
+    (0,     1, "Anfänger"),
+    (200,   2, "Beständig"),
+    (500,   3, "Gewohnheitstier"),
+    (1200,  4, "Diszipliniert"),
+    (2500,  5, "Stoiker"),
+    (5000,  6, "Meister der Routine"),
+    (10000, 7, "Marcus Aurelius"),
+]
+
+ACHIEVEMENTS = [
+    {"id": "first-day",    "name": "Erster Tag",       "icon": "🌱", "desc": "Erstes Habit getrackt"},
+    {"id": "week-warrior", "name": "Wochenkrieger",     "icon": "⚔️", "desc": "7-Tage-Streak bei einem Habit"},
+    {"id": "month-master", "name": "Monatsmeister",     "icon": "🏆", "desc": "30-Tage-Streak bei einem Habit"},
+    {"id": "all-in",       "name": "All-In",            "icon": "💯", "desc": "Alle Habits an einem Tag erledigt"},
+    {"id": "fifty-days",   "name": "50 Tage dabei",     "icon": "📅", "desc": "50 Tage mit mindestens 1 Eintrag"},
+    {"id": "hundred-days", "name": "100 Tage dabei",    "icon": "🎖️", "desc": "100 Tage mit mindestens 1 Eintrag"},
+    {"id": "weight-5",     "name": "5kg geschafft",     "icon": "🔥", "desc": "5 kg seit Start abgenommen"},
+    {"id": "level-up-3",   "name": "Gewohnheitstier",   "icon": "🦁", "desc": "Level 3 erreicht"},
+    {"id": "level-up-5",   "name": "Stoiker",           "icon": "🏛️", "desc": "Level 5 erreicht"},
+    {"id": "level-up-7",   "name": "Marcus Aurelius",   "icon": "👑", "desc": "Level 7 erreicht"},
+]
+
+
+def _calculate_xp(data):
+    """Recalculate total XP from all entries — idempotent."""
+    habits = data.get("habits", {})
+    journal = data.get("journal", {})
+    xp = 0
+
+    # Collect all dates that have any entry
+    all_dates = set()
+    for slug, h in habits.items():
+        for d in h.get("entries", {}):
+            if len(d) == 10:
+                all_dates.add(d)
+    for d in journal:
+        if len(d) == 10:
+            all_dates.add(d)
+
+    for ds in sorted(all_dates):
+        day_xp = 0
+        tracked_count = 0
+        total_habits = len(habits)
+
+        for slug, h in habits.items():
+            entries = h.get("entries", {})
+            val = entries.get(ds)
+            if val is None:
+                continue
+            tracked_count += 1
+            htype = h.get("type", "number")
+            if htype == "boolean":
+                day_xp += 10
+            else:
+                day_xp += 5  # any numeric value
+                # Target check: for numeric habits, reaching daily target
+                # Use unit-based heuristics (any non-zero value counts as target met)
+                day_xp += 10  # +15 total for numeric with value
+
+        # Journaling bonus
+        if ds in journal:
+            day_xp += 20
+
+        # All habits done bonus
+        if total_habits > 0 and tracked_count >= total_habits:
+            day_xp += 50
+
+        xp += day_xp
+
+    # Streak bonuses — check each habit's max streak milestones
+    for slug, h in habits.items():
+        entries = h.get("entries", {})
+        keys = sorted(d for d in entries if len(d) == 10)
+        if len(keys) < 2:
+            continue
+        # Find all streaks to award milestone bonuses
+        cur_streak = 1
+        awarded_7 = False
+        awarded_30 = False
+        for i in range(1, len(keys)):
+            try:
+                d1 = datetime.strptime(keys[i-1], "%Y-%m-%d").date()
+                d2 = datetime.strptime(keys[i], "%Y-%m-%d").date()
+                if (d2 - d1).days == 1:
+                    cur_streak += 1
+                    if cur_streak >= 7 and not awarded_7:
+                        xp += 100
+                        awarded_7 = True
+                    if cur_streak >= 30 and not awarded_30:
+                        xp += 500
+                        awarded_30 = True
+                else:
+                    cur_streak = 1
+                    awarded_7 = False
+                    awarded_30 = False
+            except ValueError:
+                cur_streak = 1
+
+    return xp
+
+
+def _get_level(xp):
+    """Return (level_number, title, xp_for_this_level, xp_for_next_level)."""
+    lvl_num, title, lvl_xp = LEVELS[0]
+    next_xp = LEVELS[1][0] if len(LEVELS) > 1 else None
+    for i, (threshold, num, t) in enumerate(LEVELS):
+        if xp >= threshold:
+            lvl_num = num
+            title = t
+            lvl_xp = threshold
+            next_xp = LEVELS[i + 1][0] if i + 1 < len(LEVELS) else None
+    return lvl_num, title, lvl_xp, next_xp
+
+
+def _check_achievements(data, xp, level):
+    """Check all achievement conditions, return list of earned ones."""
+    habits = data.get("habits", {})
+    journal = data.get("journal", {})
+    meta = data.get("meta", {})
+    earned = data.get("gamification", {}).get("achievements", {})
+    today_str = today()
+
+    def award(aid):
+        if aid not in earned:
+            earned[aid] = today_str
+
+    # first-day: any habit tracked
+    for h in habits.values():
+        if h.get("entries"):
+            award("first-day")
+            break
+
+    # week-warrior / month-master: streak milestones
+    for h in habits.values():
+        ms = _max_streak(h.get("entries", {}))
+        if ms >= 7:
+            award("week-warrior")
+        if ms >= 30:
+            award("month-master")
+
+    # all-in: all habits done in one day
+    all_dates = set()
+    for h in habits.values():
+        for d in h.get("entries", {}):
+            if len(d) == 10:
+                all_dates.add(d)
+    total_habits = len(habits)
+    if total_habits > 0:
+        for ds in all_dates:
+            done = sum(1 for h in habits.values() if h.get("entries", {}).get(ds) is not None)
+            if done >= total_habits:
+                award("all-in")
+                break
+
+    # fifty-days / hundred-days: days with at least 1 entry
+    entry_dates = set()
+    for h in habits.values():
+        for d in h.get("entries", {}):
+            if len(d) == 10:
+                entry_dates.add(d)
+    for d in journal:
+        if len(d) == 10:
+            entry_dates.add(d)
+    if len(entry_dates) >= 50:
+        award("fifty-days")
+    if len(entry_dates) >= 100:
+        award("hundred-days")
+
+    # weight-5: lost 5kg from start
+    sw = meta.get("start_weight_kg")
+    gw = habits.get("gewicht", {}).get("entries", {})
+    if sw and gw:
+        weights = sorted((k, v) for k, v in gw.items() if isinstance(v, (int, float)))
+        if weights:
+            current = weights[-1][1]
+            if sw - current >= 5:
+                award("weight-5")
+
+    # level-based
+    if level >= 3:
+        award("level-up-3")
+    if level >= 5:
+        award("level-up-5")
+    if level >= 7:
+        award("level-up-7")
+
+    return earned
+
 # ──── serve app ───────────────────────────────────────────────────────
 
 @app.route("/")
@@ -399,6 +590,63 @@ def delete_goal(slug):
     if slug in d.get("goals", {}):
         del d["goals"][slug]
         save(d)
+    return jsonify({"ok": True})
+
+# ──── API: journal ──────────────────────────────────────────────────
+
+# ──── API: gamification (T-0820/0821/0822) ────────────────────────
+
+@app.route("/api/gamification")
+def gamification():
+    d = load()
+    xp = _calculate_xp(d)
+    level, title, lvl_xp, next_xp = _get_level(xp)
+    achievements = _check_achievements(d, xp, level)
+
+    # Update gamification section in data.json
+    g = d.setdefault("gamification", {})
+    g["xp"] = xp
+    g["level"] = level
+    g["title"] = title
+    g["achievements"] = achievements
+    save(d)
+
+    if next_xp is not None:
+        xp_to_next = next_xp - xp
+        progress_pct = round((xp - lvl_xp) / (next_xp - lvl_xp) * 100) if next_xp > lvl_xp else 100
+    else:
+        xp_to_next = 0
+        progress_pct = 100
+
+    # Build achievement list with earned status
+    ach_list = []
+    for a in ACHIEVEMENTS:
+        earned_date = achievements.get(a["id"])
+        ach_list.append({
+            **a,
+            "earned": earned_date is not None,
+            "earned_date": earned_date,
+        })
+
+    return jsonify({
+        "xp": xp,
+        "level": level,
+        "title": title,
+        "xp_to_next_level": max(0, xp_to_next),
+        "progress_pct": max(0, min(100, progress_pct)),
+        "level_xp": lvl_xp,
+        "next_level_xp": next_xp,
+        "last_seen_level": g.get("last_seen_level", 1),
+        "achievements": ach_list,
+    })
+
+@app.route("/api/gamification/seen", methods=["PUT"])
+def gamification_seen():
+    """Mark the current level as seen (dismiss level-up notification)."""
+    d = load()
+    g = d.setdefault("gamification", {})
+    g["last_seen_level"] = g.get("level", 1)
+    save(d)
     return jsonify({"ok": True})
 
 # ──── API: journal ──────────────────────────────────────────────────
