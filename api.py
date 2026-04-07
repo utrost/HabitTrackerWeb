@@ -45,6 +45,7 @@ def days_ago(n):
 def _default_data():
     return {
         "habits": {},
+        "goals": {},
         "journal": {},
         "meta": {"start_date": today(), "start_weight_kg": None, "target_weight_kg": None, "version": 2}
     }
@@ -147,6 +148,31 @@ def _get_overview():
     weights = sorted((k, v) for k, v in w_entries.items() if isinstance(v, (int, float)))
     meta = d.get("meta", {})
     today_done = sum(1 for h in hlist if h["today"] is not None)
+    total_habits = len(habits)
+
+    # Task 3 (T-0815): Weekly completion rate
+    week_done = 0
+    week_possible = 0
+    for i in range(7):
+        ds = days_ago(i)
+        for slug_h, hh in habits.items():
+            week_possible += 1
+            if hh.get("entries", {}).get(ds) is not None:
+                week_done += 1
+    week_rate = round(week_done / week_possible * 100) if week_possible > 0 else 0
+    # Previous week for trend comparison
+    last_done = 0
+    last_possible = 0
+    for i in range(7, 14):
+        ds = days_ago(i)
+        for slug_h, hh in habits.items():
+            last_possible += 1
+            if hh.get("entries", {}).get(ds) is not None:
+                last_done += 1
+    last_rate = round(last_done / last_possible * 100) if last_possible > 0 else 0
+    trend = "up" if week_rate > last_rate else ("down" if week_rate < last_rate else "flat")
+    today_rate = round(today_done / total_habits * 100) if total_habits > 0 else 0
+
     return {
         "habits": hlist,
         "total": len(hlist),
@@ -156,6 +182,11 @@ def _get_overview():
         "weight_trend": round(weights[-1][1] - weights[-2][1], 2) if len(weights) >= 2 else None,
         "start_weight": meta.get("start_weight_kg"),
         "target_weight": meta.get("target_weight_kg"),
+        "completion_rate": {
+            "today": today_rate,
+            "week": week_rate,
+            "trend": trend,
+        },
     }
 
 @app.route("/api/overview")
@@ -293,6 +324,82 @@ def track_weight():
         d["meta"]["target_weight_kg"] = body["target"]
     save(d)
     return jsonify({"ok": True, "weight": w})
+
+# ──── API: goals (T-0814) ───────────────────────────────────────────
+# GET /api/goals — returns all goals with current progress
+# PUT /api/goal — create or update a goal
+# DELETE /api/goal/<slug> — remove a goal
+
+@app.route("/api/goals")
+def get_goals():
+    d = load()
+    goals = d.get("goals", {})
+    habits = d.get("habits", {})
+    result = {}
+    for slug, g in goals.items():
+        metric = g.get("metric", "")
+        target = g.get("target", 0)
+        direction = g.get("direction", "up")
+        start_value = g.get("start_value", 0)
+        contributing = g.get("contributing_habits", [])
+        # Current value depends on metric type
+        if metric == "streak":
+            current = 0
+            for ch in contributing:
+                h = habits.get(ch, {})
+                current = max(current, _streak(h.get("entries", {})))
+        else:
+            # Habit-slug metric (e.g. "gewicht")
+            h = habits.get(metric, {})
+            w_entries = h.get("entries", {})
+            vals = sorted((k, v) for k, v in w_entries.items() if isinstance(v, (int, float)))
+            current = vals[-1][1] if vals else start_value
+        # Progress %
+        if direction == "down":
+            total_range = start_value - target
+            done = start_value - current
+        else:
+            total_range = target - start_value
+            done = current - start_value
+        pct = round(done / total_range * 100) if total_range != 0 else 0
+        pct = max(0, min(100, pct))
+        trend = "positive" if done > 0 else "flat"
+        result[slug] = {
+            **g,
+            "current_value": current,
+            "progress_pct": pct,
+            "trend": trend,
+            "remaining": round(abs(current - target), 1),
+        }
+    return jsonify(result)
+
+@app.route("/api/goal", methods=["PUT"])
+def put_goal():
+    body = request.json or {}
+    slug = (body.get("slug") or "").strip()
+    if not slug:
+        return jsonify({"error": "slug required"}), 400
+    d = load()
+    d.setdefault("goals", {})[slug] = {
+        "label": body.get("label", slug),
+        "icon": body.get("icon", "🎯"),
+        "metric": body.get("metric", ""),
+        "target": body.get("target", 0),
+        "direction": body.get("direction", "up"),
+        "start_value": body.get("start_value", 0),
+        "start_date": body.get("start_date", today()),
+        "contributing_habits": body.get("contributing_habits", []),
+    }
+    save(d)
+    return jsonify({"ok": True, "slug": slug})
+
+@app.route("/api/goal/<slug>", methods=["DELETE"])
+def delete_goal(slug):
+    d = load()
+    if slug in d.get("goals", {}):
+        del d["goals"][slug]
+        save(d)
+    return jsonify({"ok": True})
 
 # ──── API: journal ──────────────────────────────────────────────────
 

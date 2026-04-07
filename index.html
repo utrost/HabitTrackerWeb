@@ -141,6 +141,30 @@ canvas{width:100%;height:180px;background:var(--card);border-radius:var(--radius
 .whr{display:flex;justify-content:space-between;padding:.5rem .8rem;border-bottom:1px solid var(--border);font-size:.8rem}
 .whd{color:var(--muted);flex-shrink:0;width:80px}
 .whv{flex:1}
+
+/* HEATMAP (T-0816) */
+.hm-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:1rem;background:var(--card);border-radius:var(--radius);padding:.6rem}
+.hm-wrap::-webkit-scrollbar{display:none}
+.hm-title{font-size:.8rem;font-weight:600;margin-bottom:.5rem;padding-left:.2rem}
+.hm{display:grid;gap:2px;font-size:.55rem}
+.hm-lbl{font-size:.6rem;color:var(--muted);display:flex;align-items:center;height:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hm-cell{width:11px;height:11px;border-radius:2px;background:var(--border)}
+.hm-cell.l1{background:rgba(108,92,231,.3)}.hm-cell.l2{background:rgba(108,92,231,.55)}.hm-cell.l3{background:rgba(108,92,231,.8)}.hm-cell.l4{background:var(--accent)}
+.hm-hdr{font-size:.45rem;color:var(--muted);text-align:center;height:11px;line-height:11px}
+
+/* DASHBOARD (T-0818) */
+.dash{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.8rem}
+.dc{background:var(--card);border-radius:var(--radius);padding:.55rem .65rem}
+.dc .dl{font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+.dc .dv{font-size:1.05rem;font-weight:700;margin-top:.12rem}
+.dc .dd{font-size:.63rem;color:var(--muted);margin-top:.08rem}
+.dc.wide{grid-column:1/-1}
+.goal-bar{height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:.3rem}
+.goal-fill{height:100%;border-radius:3px;transition:width .5s}
+
+/* READ-ONLY MODE (T-0819) */
+.ro-badge{display:inline-block;background:var(--yellow2);color:var(--yellow);padding:.15rem .45rem;border-radius:6px;font-size:.6rem}
+.hide-ro{display:none!important}
 </style>
 </head>
 <body>
@@ -153,10 +177,10 @@ canvas{width:100%;height:180px;background:var(--card);border-radius:var(--radius
 
 <div class="wk" id="wk"></div>
 
-<div class="pg on" id="pgToday"></div>
-<div class="pg" id="pgHistory"></div>
-<div class="pg" id="pgWeight"></div>
-<div class="pg" id="pgJournal"></div>
+<div class="pg on" id="pgToday" style="padding:.8rem"><div id="pgDash"></div><div id="pgHabits"></div></div>
+<div class="pg" id="pgHistory" style="padding:.8rem"><div id="pgHeatmap"></div><div id="pgHistList"></div></div>
+<div class="pg" id="pgWeight" style="padding:.8rem"></div>
+<div class="pg" id="pgJournal" style="padding:.8rem"></div>
 
 <button class="fab" id="fab">+</button>
 
@@ -183,10 +207,10 @@ canvas{width:100%;height:180px;background:var(--card);border-radius:var(--radius
 
 <!-- Bottom nav -->
 <nav class="bn">
-  <button class="nv on" data-pg="Today" onclick="nav(this)"><span class="ni2">📋</span>Heute</button>
-  <button class="nv" data-pg="History" onclick="nav(this)"><span class="ni2">📊</span></button>
-  <button class="nv" data-pg="Weight" onclick="nav(this)"><span class="ni2">⚖️</span></button>
-  <button class="nv" data-pg="Journal" onclick="nav(this)"><span class="ni2">📓</span></button>
+  <button class="nv on" data-pg="pgToday" onclick="nav(this)"><span class="ni2">📋</span>Heute</button>
+  <button class="nv" data-pg="pgHistory" onclick="nav(this)"><span class="ni2">📊</span></button>
+  <button class="nv" data-pg="pgWeight" onclick="nav(this)"><span class="ni2">⚖️</span></button>
+  <button class="nv" data-pg="pgJournal" onclick="nav(this)"><span class="ni2">📓</span></button>
 </nav>
 
 <div class="toast" id="toast"></div>
@@ -198,37 +222,110 @@ canvas{width:100%;height:180px;background:var(--card);border-radius:var(--radius
 <script>
 const T = new Date().toISOString().slice(0,10);
 const DL = ['So','Mo','Di','Mi','Do','Fr','Sa'];
-let D = {habits:[],overview:{}};
+const MNAMES = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+let D = {habits:[],overview:{},goals:{}};
+let READONLY = false;
 
-// ── fetch ──
-async function api(m,u,b){
+// ── fetch helpers ──
+async function apiCall(m,u,b){
   const r = await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):null});
   if(!r.ok) throw new Error(await r.text());
   return r.json();
 }
 
-async function load(){
-  try{
-    const [ov,h] = await Promise.all([
-      api('GET','/api/overview'),
-      api('GET','/api/habits')
-    ]);
-    D={habits:h,overview:ov};
-    R();
-  }catch(e){
-    console.error(e);
-    toast('❌ '+e.message);
+// T-0819: Read-only fallback — compute streak client-side
+function _clientStreak(entries){
+  const keys=Object.keys(entries).filter(k=>k.length===10).sort();
+  if(!keys.length) return 0;
+  const td=new Date(T);
+  const last=new Date(keys[keys.length-1]);
+  if((td-last)/864e5>1.5) return 0;
+  let s=1;
+  for(let i=keys.length-1;i>0;i--){
+    if((new Date(keys[i])-new Date(keys[i-1]))/864e5===1) s++; else break;
   }
+  return s;
 }
 
-async function R(){
-  await load();
-  hdr();
-  wk();
-  today();
-  hist();
-  wgt();
-  jourList();
+async function fetchFromAPI(){
+  const [ov,h,goals] = await Promise.all([
+    apiCall('GET','/api/overview'),
+    apiCall('GET','/api/habits'),
+    apiCall('GET','/api/goals').catch(()=>({}))
+  ]);
+  D = {habits:h, overview:ov, goals:goals};
+}
+
+// T-0819: Fallback to data.json when API is unavailable
+async function fetchFromJSON(){
+  const r = await fetch('data.json');
+  const d = await r.json();
+  const habits = d.habits || {};
+  const hlist = [];
+  for(const [slug, h] of Object.entries(habits)){
+    const entries = h.entries || {};
+    const streak = _clientStreak(entries);
+    hlist.push({
+      slug, label:h.label||slug, icon:h.icon||'📋',
+      type:h.type||'number', unit:h.unit||'',
+      inverted:h.inverted||false, chart:h.chart||false,
+      today:entries[T]!=null?entries[T]:null,
+      entries, streak, max_streak:streak, total_entries:Object.keys(entries).length
+    });
+  }
+  const gw = habits.gewicht||{};
+  const wE = gw.entries||{};
+  const weights = Object.entries(wE).filter(([,v])=>typeof v==='number').sort((a,b)=>a[0].localeCompare(b[0]));
+  const meta = d.meta||{};
+  const todayDone = hlist.filter(h=>h.today!=null).length;
+  const total = hlist.length;
+  // Find last updated date
+  let lastDate = meta.start_date||T;
+  for(const h of Object.values(habits)){
+    for(const k of Object.keys(h.entries||{})){
+      if(k>lastDate) lastDate=k;
+    }
+  }
+  D = {
+    habits: hlist,
+    overview: {
+      habits:hlist, total, today_done:todayDone, today_total:total,
+      current_weight:weights.length?weights[weights.length-1][1]:null,
+      weight_trend:weights.length>=2?Math.round((weights[weights.length-1][1]-weights[weights.length-2][1])*100)/100:null,
+      start_weight:meta.start_weight_kg, target_weight:meta.target_weight_kg,
+      completion_rate:{today:total?Math.round(todayDone/total*100):0, week:0, trend:'flat'}
+    },
+    goals: d.goals||{},
+    lastUpdated: lastDate
+  };
+}
+
+async function refresh(){
+  try{
+    await fetchFromAPI();
+    READONLY = false;
+  }catch(e){
+    console.warn('API unavailable, trying read-only mode',e);
+    try{
+      await fetchFromJSON();
+      READONLY = true;
+    }catch(e2){
+      console.error('Cannot load data',e2);
+      toast('❌ Daten nicht verfügbar');
+      return;
+    }
+  }
+  render();
+}
+
+function render(){
+  hdr(); weekRow(); renderToday(); dashboard(); hist(); heatmap(); wgt(); jourList();
+  // T-0819: hide interactive elements in read-only mode
+  if(READONLY){
+    document.getElementById('fab').style.display='none';
+    document.querySelectorAll('.del,.nr,.qb,.wir,.wsv,.ji').forEach(el=>el.style.display='none');
+    document.querySelectorAll('.tog').forEach(el=>{el.style.pointerEvents='none';el.style.opacity='.6';});
+  }
 }
 
 // ── nav ──
@@ -236,22 +333,29 @@ function nav(b){
   document.querySelectorAll('.nv').forEach(n=>n.classList.remove('on'));
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
   b.classList.add('on');
-  document.getElementById('pg'+b.dataset.pg).classList.add('on');
+  document.getElementById(b.dataset.pg).classList.add('on');
 }
 
 // ── header ──
 function hdr(){
   const o=D.overview;
   const p=o.today_total>0?Math.round(o.today_done/o.today_total*100):0;
-  document.getElementById('hdrSub').textContent = p===100?'✨ Alle erledigt!':`${o.today_done}/${o.today_total} heute — ${p}%`;
+  const sub = READONLY
+    ? `📖 Nur-Lesen · Aktualisiert: ${D.lastUpdated||'—'}`
+    : (p===100?'✨ Alle erledigt!':`${o.today_done}/${o.today_total} heute — ${p}%`);
+  document.getElementById('hdrSub').innerHTML = READONLY
+    ? `<span class="ro-badge">${sub}</span>`
+    : sub;
+  const cr = o.completion_rate||{};
+  const trendIcon = cr.trend==='up'?'↑':cr.trend==='down'?'↓':'→';
   document.getElementById('hdrStats').innerHTML=`
     <div class="st"><div class="n" style="color:${p>=100?'var(--green)':'var(--accent)'}">${p}%</div><div class="l">Heute</div></div>
-    <div class="st"><div class="n">${o.today_done}/${o.today_total}</div><div class="l">Erledigt</div></div>
+    <div class="st"><div class="n">${cr.week||0}%${trendIcon}</div><div class="l">Woche</div></div>
     <div class="st"><div class="n">${o.current_weight??'—'}kg</div><div class="l">Gewicht</div></div>`;
 }
 
-// ── week ──
-function wk(){
+// ── week row ──
+function weekRow(){
   let h='';
   for(let i=6;i>=0;i--){
     const d=new Date();d.setDate(d.getDate()-i);
@@ -267,10 +371,59 @@ function wk(){
   document.getElementById('wk').innerHTML=h;
 }
 
-// ── TODAY ──
-function today(){
+// ── T-0818: Weekly Overview Dashboard ──
+function dashboard(){
+  const o=D.overview;
+  const cr=o.completion_rate||{};
+  // Compute per-habit weekly completion %
+  let best=null,worst=null;
+  D.habits.forEach(x=>{
+    let done=0;
+    for(let i=0;i<7;i++){
+      const d=new Date();d.setDate(d.getDate()-i);
+      const ds=d.toISOString().slice(0,10);
+      if(x.entries&&x.entries[ds]!=null) done++;
+    }
+    const pct=Math.round(done/7*100);
+    if(!best||pct>best.pct) best={label:x.label,icon:x.icon,pct};
+    if(!worst||pct<worst.pct) worst={label:x.label,icon:x.icon,pct};
+  });
+  // Streaks summary
+  const streaks=D.habits.filter(x=>x.streak>0).sort((a,b)=>b.streak-a.streak);
+  const streakTxt=streaks.length?streaks.map(s=>`${s.icon}${s.streak}`).join(' · '):'Keine';
+  // Weight progress
+  const cw=o.current_weight,sw=o.start_weight,tw=o.target_weight;
+  const wProg=sw&&tw&&cw?Math.max(0,Math.min(100,Math.round((sw-cw)/(sw-tw)*100))):0;
+  // Goals
+  let goalsHtml='';
+  if(D.goals&&Object.keys(D.goals).length){
+    for(const [slug,g] of Object.entries(D.goals)){
+      const pct=g.progress_pct||0;
+      const col=pct>=75?'var(--green)':pct>=40?'var(--yellow)':'var(--accent)';
+      goalsHtml+=`<div class="dc wide">
+        <div class="dl">${g.icon||'🎯'} ${g.label||slug}</div>
+        <div class="dv">${pct}%</div>
+        <div class="dd">${g.current_value!=null?g.current_value:''} → Ziel: ${g.target} · Noch ${g.remaining!=null?g.remaining:''}</div>
+        <div class="goal-bar"><div class="goal-fill" style="width:${pct}%;background:${col}"></div></div>
+      </div>`;
+    }
+  }
+  const trendIcon=cr.trend==='up'?'📈':cr.trend==='down'?'📉':'➡️';
+  document.getElementById('pgDash').innerHTML=`<div class="dash">
+    <div class="dc"><div class="dl">Beste Woche</div><div class="dv">${best?best.icon+' '+best.pct+'%':'—'}</div><div class="dd">${best?best.label:''}</div></div>
+    <div class="dc"><div class="dl">Schwächste</div><div class="dv">${worst?worst.icon+' '+worst.pct+'%':'—'}</div><div class="dd">${worst?worst.label:''}</div></div>
+    <div class="dc"><div class="dl">${trendIcon} Wochenrate</div><div class="dv">${cr.week||0}%</div><div class="dd">vs letzte Woche: ${cr.trend==='up'?'besser':cr.trend==='down'?'schlechter':'gleich'}</div></div>
+    <div class="dc"><div class="dl">🔥 Streaks</div><div class="dv" style="font-size:.8rem">${streakTxt}</div></div>
+    ${cw?`<div class="dc wide"><div class="dl">⚖️ Gewicht-Fortschritt</div><div class="dv">${cw} kg</div><div class="dd">Start: ${sw||'?'} → Ziel: ${tw||'?'} · ${wProg}% erreicht</div><div class="goal-bar"><div class="goal-fill" style="width:${wProg}%;background:${wProg>=50?'var(--green)':'var(--accent)'}"></div></div></div>`:''}
+    ${goalsHtml}
+  </div>`;
+}
+
+// ── TODAY (habit cards) ──
+function renderToday(){
+  const el=document.getElementById('pgHabits');
   if(!D.habits.length){
-    document.getElementById('pgToday').innerHTML='<div class="emp"><div class="ei">🎯</div><div class="et">Noch keine Habits.<br>Tippe + zum Starten.</div></div>';
+    el.innerHTML='<div class="emp"><div class="ei">🎯</div><div class="et">Noch keine Habits.<br>Tippe + zum Starten.</div></div>';
     return;
   }
   let h='';
@@ -306,7 +459,7 @@ function today(){
       <button class="del" onclick="delH('${x.slug}')">✕</button>
     </div>`;
   });
-  document.getElementById('pgToday').innerHTML=h;
+  el.innerHTML=h;
 }
 
 function shortcuts(x){
@@ -320,18 +473,21 @@ function shortcuts(x){
 }
 
 async function tog(slug){
-  try{await api('PUT','/api/track',{slug});toast('✅');await R();}catch(e){toast('❌ '+e.message);}
+  if(READONLY)return;
+  try{await apiCall('PUT','/api/track',{slug});toast('✅');await refresh();}catch(e){toast('❌ '+e.message);}
 }
 
 async function trk(slug){
+  if(READONLY)return;
   const el=document.getElementById('i-'+slug);
   const v=el?el.value.trim():'';
   if(!v)return;
-  try{await api('PUT','/api/track',{slug,value:parseFloat(v)});toast('✅');await R();}catch(e){toast('❌ '+e.message);}
+  try{await apiCall('PUT','/api/track',{slug,value:parseFloat(v)});toast('✅');await refresh();}catch(e){toast('❌ '+e.message);}
 }
 
 async function qtrk(slug,v){
-  try{const el=document.getElementById('i-'+slug);if(el)el.value=v;await api('PUT','/api/track',{slug,value:parseFloat(v)});toast('✅');await R();}catch(e){toast('❌ '+e.message);}
+  if(READONLY)return;
+  try{const el=document.getElementById('i-'+slug);if(el)el.value=v;await apiCall('PUT','/api/track',{slug,value:parseFloat(v)});toast('✅');await refresh();}catch(e){toast('❌ '+e.message);}
 }
 
 function nudge(slug,d){
@@ -343,8 +499,9 @@ function nudge(slug,d){
 }
 
 async function delH(slug){
+  if(READONLY)return;
   if(!confirm('Habit löschen? (Daten bleiben in backups)'))return;
-  try{await api('DELETE','/api/habit/'+slug);toast('🗑️');await R();}catch(e){toast('❌ '+e.message);}
+  try{await apiCall('DELETE','/api/habit/'+slug);toast('🗑️');await refresh();}catch(e){toast('❌ '+e.message);}
 }
 
 // ── ADD HABIT ──
@@ -352,23 +509,70 @@ document.getElementById('fab').onclick=()=>document.getElementById('addMo').clas
 function closeMo(){document.getElementById('addMo').classList.remove('show');document.getElementById('iLbl').value='';}
 
 async function addHabit(){
+  if(READONLY)return;
   const lbl=document.getElementById('iLbl').value.trim();
   if(!lbl){alert('Name eingeben!');return;}
   try{
-    await api('POST','/api/habit',{
+    await apiCall('POST','/api/habit',{
       label:lbl,
       icon:document.getElementById('iIco').value||'⬜',
       unit:document.getElementById('iUnt').value||'',
       type:document.getElementById('iTyp').value
     });
-    closeMo();toast('🎉 '+lbl);await R();
+    closeMo();toast('🎉 '+lbl);await refresh();
   }catch(e){toast('❌ '+e.message);}
 }
 
-// ── HISTORY ──
+// ── T-0816: HEATMAP ──
+function heatmap(){
+  const el=document.getElementById('pgHeatmap');
+  if(!D.habits.length){el.innerHTML='';return;}
+  const DAYS=84; // 12 weeks
+  const cols=DAYS+1; // +1 for label column
+  // Build date array
+  const dates=[];
+  for(let i=DAYS-1;i>=0;i--){
+    const d=new Date();d.setDate(d.getDate()-i);
+    dates.push(d.toISOString().slice(0,10));
+  }
+  let h='<div class="hm-title">Heatmap · 12 Wochen</div><div class="hm-wrap"><div class="hm" style="grid-template-columns:70px repeat('+DAYS+',11px)">';
+  // Header row with month labels
+  h+='<div></div>';
+  let lastM='';
+  dates.forEach(ds=>{
+    const m=MNAMES[parseInt(ds.slice(5,7))-1];
+    if(m!==lastM){h+=`<div class="hm-hdr">${m}</div>`;lastM=m;}
+    else h+='<div class="hm-hdr"></div>';
+  });
+  // One row per habit
+  D.habits.forEach(x=>{
+    const e=x.entries||{};
+    h+=`<div class="hm-lbl">${x.icon} ${x.label}</div>`;
+    dates.forEach(ds=>{
+      const v=e[ds];
+      let lvl='';
+      if(v!=null){
+        if(x.type==='boolean') lvl='l4';
+        else{
+          // For numeric: intensity based on relative value
+          const allVals=Object.values(e).filter(vv=>typeof vv==='number');
+          const mx=allVals.length?Math.max(...allVals):1;
+          const pct=mx>0?v/mx:0;
+          lvl=pct>=.75?'l4':pct>=.5?'l3':pct>=.25?'l2':'l1';
+        }
+      }
+      h+=`<div class="hm-cell ${lvl}" title="${x.label} ${ds}: ${v!=null?v:'—'}"></div>`;
+    });
+  });
+  h+='</div></div>';
+  el.innerHTML=h;
+}
+
+// ── HISTORY (30-day dots) ──
 function hist(){
+  const el=document.getElementById('pgHistList');
   if(!D.habits.length){
-    document.getElementById('pgHistory').innerHTML='<div class="emp"><div class="ei">📊</div><div class="et">Noch keine Daten.</div></div>';
+    el.innerHTML='<div class="emp"><div class="ei">📊</div><div class="et">Noch keine Daten.</div></div>';
     return;
   }
   let h='<div style="font-size:.8rem;font-weight:600;margin-bottom:.5rem;padding-left:.2rem">Letzte 30 Tage</div>';
@@ -389,7 +593,7 @@ function hist(){
       <div class="dots">${dots}</div>
     </div>`;
   });
-  document.getElementById('pgHistory').innerHTML=h;
+  el.innerHTML=h;
 }
 
 // ── WEIGHT ──
@@ -401,8 +605,11 @@ function wgt(){
     const cls=trend>0?'up':trend<0?'dn':'sm';
     tH=`<div class="wtr ${cls}">${trend>0?'↑':trend<0?'↓':'→'} ${Math.abs(trend).toFixed(1)} kg vs letzte Woche</div>`;
   }
-  const rem=cw!=null?(cw-tw).toFixed(1):'—';
-  const progress=sw&&tw?Math.max(0,Math.min(100,Math.round((sw-cw)/(sw-tw)*100))):0;
+  const rem=cw!=null&&tw!=null?(cw-tw).toFixed(1):'—';
+  const progress=sw&&tw&&cw?Math.max(0,Math.min(100,Math.round((sw-cw)/(sw-tw)*100))):0;
+  // T-0817: deltas from start and to goal
+  const deltaStart=cw!=null&&sw!=null?cw-sw:null;
+  const deltaGoal=cw!=null&&tw!=null?cw-tw:null;
   document.getElementById('pgWeight').innerHTML=`
     <div class="wbc">
       <div class="wbg">${cw!=null?cw:'—'}</div>
@@ -411,13 +618,14 @@ function wgt(){
       <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);margin-top:.4rem">
         <span>Start: ${sw||'?'} kg</span><span>Ziel: ${tw||'?'} kg</span>
       </div>
-      <div style="font-size:.7rem;color:var(--muted);margin-top:.2rem">Noch: ${rem} kg (${progress}% erreicht)</div>
+      ${deltaStart!=null?`<div style="font-size:.68rem;margin-top:.2rem"><span style="color:${deltaStart<=0?'var(--green)':'var(--red)'}">Seit Start: ${deltaStart>0?'+':''}${deltaStart.toFixed(1)} kg</span> · <span style="color:var(--muted)">Bis Ziel: ${deltaGoal!=null?deltaGoal.toFixed(1)+' kg':'?'}</span></div>`:''}
+      <div style="font-size:.7rem;color:var(--muted);margin-top:.2rem">${progress}% erreicht</div>
       <div style="margin-top:.4rem;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
         <div style="height:100%;width:${progress}%;background:${progress>=50?'var(--green)':'var(--accent)'};border-radius:3px;transition:width .5s"></div>
       </div>
     </div>
-    <div style="text-align:center;margin-top:.6rem">
-      <div class="wir" style="display:flex;justify-content:center">
+    <div style="text-align:center;margin-top:.6rem" class="wir">
+      <div style="display:flex;justify-content:center;gap:.4rem">
         <input class="wi" id="wInp" type="text" inputmode="decimal" placeholder="kg" style="width:100px">
         <button class="wsv" onclick="savW()">💾 Speichern</button>
       </div>
@@ -429,23 +637,25 @@ function wgt(){
 }
 
 async function savW(){
+  if(READONLY)return;
   const el=document.getElementById('wInp');
   if(!el||!el.value.trim())return;
-  try{await api('PUT','/api/weight',{weight:parseFloat(el.value)});
+  try{await apiCall('PUT','/api/weight',{weight:parseFloat(el.value)});
     toast('⚖️ '+el.value.trim()+' kg gespeichert');
-    el.value='';await R();}
+    el.value='';await refresh();}
   catch(e){toast('❌ '+e.message);}
 }
 
+// T-0817: Weight chart with 7-day moving average
 function drawChart(){
   const c=document.getElementById('wChart');
   if(!c||!D.habits)return;
   const gw=D.habits.find(x=>x.slug==='gewicht');
   if(!gw||!gw.entries||!Object.keys(gw.entries).length){
-    c.getContext('2d').fillStyle='#6870a0';
-    c.getContext('2d').font='13px sans-serif';
-    c.getContext('2d').textAlign='center';
-    c.getContext('2d').fillText('Noch keine Gewichtseinträge',c.parentElement.offsetWidth/2,90);
+    const ctx2=c.getContext('2d');
+    c.width=c.offsetWidth-10;c.height=180;
+    ctx2.fillStyle='#6870a0';ctx2.font='13px sans-serif';ctx2.textAlign='center';
+    ctx2.fillText('Noch keine Gewichtseinträge',c.width/2,90);
     return;
   }
   const ctx=c.getContext('2d');
@@ -455,15 +665,59 @@ function drawChart(){
   const pts=Object.entries(gw.entries).filter(([k,v])=>typeof v==='number').sort((a,b)=>a[0].localeCompare(b[0]));
   const vals=pts.map(p=>p[1]);
   const tw=D.overview.target_weight||82;
-  const mn=Math.min(...vals,tw)-1,mx=Math.max(...vals)+1;
+  const sw=D.overview.start_weight||vals[0];
+  const mn=Math.min(...vals,tw)-1,mx=Math.max(...vals,sw)+1;
   const pad={t:15,b:25,l:40,r:10},cw=W-pad.l-pad.r,ch=H-pad.t-pad.b;
-  const yOf=v=>pad.t+ch-((v-mn)/(mx-mn))*ch,xOf=i=>pad.l+(i/Math.max(pts.length-1,1))*cw;
+  const yOf=v=>pad.t+ch-((v-mn)/(mx-mn))*ch;
+  const xOf=i=>pad.l+(i/Math.max(pts.length-1,1))*cw;
+
+  // Grid lines
   ctx.strokeStyle='#222248';ctx.lineWidth=.5;ctx.fillStyle='#6870a0';ctx.font='9px monospace';ctx.textAlign='right';
   for(let v=Math.ceil(mn);v<=Math.floor(mx);v++){const y=yOf(v);ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();ctx.fillText(v,pad.l-4,y+3);}
-  const tY=yOf(tw);ctx.strokeStyle='#2ecc71';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(pad.l,tY);ctx.lineTo(W-pad.r,tY);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#2ecc71';ctx.font='8px sans-serif';ctx.textAlign='left';ctx.fillText('Ziel: '+tw+'kg',pad.l+2,tY-4);
+
+  // Goal line
+  const tY=yOf(tw);
+  ctx.strokeStyle='#2ecc71';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(pad.l,tY);ctx.lineTo(W-pad.r,tY);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#2ecc71';ctx.font='8px sans-serif';ctx.textAlign='left';ctx.fillText('Ziel: '+tw+'kg',pad.l+2,tY-4);
+
+  // Start line
+  if(sw){
+    const sY=yOf(sw);
+    ctx.strokeStyle='#e74c3c';ctx.lineWidth=.5;ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(pad.l,sY);ctx.lineTo(W-pad.r,sY);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#e74c3c';ctx.font='8px sans-serif';ctx.fillText('Start: '+sw+'kg',pad.l+2,sY+10);
+  }
+
+  // Raw data line
   ctx.strokeStyle='#3498db';ctx.lineWidth=2;ctx.setLineDash([]);ctx.beginPath();
   pts.forEach((p,i)=>{const x=xOf(i),y=yOf(p[1]);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();
+
+  // T-0817: 7-day moving average trendline
+  if(pts.length>=3){
+    const maWindow=Math.min(7,pts.length);
+    ctx.strokeStyle='#f39c12';ctx.lineWidth=2;ctx.setLineDash([6,3]);ctx.beginPath();
+    let started=false;
+    for(let i=0;i<pts.length;i++){
+      const start=Math.max(0,i-maWindow+1);
+      const slice=vals.slice(start,i+1);
+      const avg=slice.reduce((a,b)=>a+b,0)/slice.length;
+      const x=xOf(i),y=yOf(avg);
+      if(!started){ctx.moveTo(x,y);started=true;}else ctx.lineTo(x,y);
+    }
+    ctx.stroke();ctx.setLineDash([]);
+    // Legend
+    ctx.fillStyle='#f39c12';ctx.font='7px sans-serif';ctx.textAlign='right';
+    ctx.fillText('— Ø7 Tage',W-pad.r,pad.t+8);
+  }
+
+  // Data points + labels
   pts.forEach((p,i)=>{const x=xOf(i),y=yOf(p[1]);ctx.fillStyle='#3498db';ctx.beginPath();ctx.arc(x,y,3.5,0,Math.PI*2);ctx.fill();ctx.fillStyle='#6870a0';ctx.font='8px sans-serif';ctx.textAlign='center';if(pts.length<=20||i%Math.ceil(pts.length/10)===0||i===pts.length-1){const pa=p[0].split('-');ctx.fillText(pa[2]+'.'+pa[1],x,H-3);}});
+
+  // Delta labels on current value
+  if(pts.length){
+    const last=vals[vals.length-1];
+    const dStart=last-sw;
+    const dGoal=last-tw;
+    ctx.fillStyle='#e0e0f0';ctx.font='bold 9px sans-serif';ctx.textAlign='right';
+    ctx.fillText(`Δ Start: ${dStart>0?'+':''}${dStart.toFixed(1)}  Δ Ziel: ${dGoal>0?'+':''}${dGoal.toFixed(1)}`,W-pad.r,pad.t+20);
+  }
 }
 
 function wList(){
@@ -471,10 +725,16 @@ function wList(){
   if(!gw||!gw.entries)return;
   const pts=Object.entries(gw.entries).filter(([k,v])=>typeof v==='number').sort((a,b)=>b[0].localeCompare(a[0]));
   let h='';
-  pts.forEach(([d,v])=>{
-    const prev=pts.find(([dd])=>dd<d);
-    const diff=prev?'':((v-prev[1])>0?' ↑'+((v-prev[1]).toFixed(1)):((v-prev[1])<0?' ↓'+(Math.abs(v-prev[1]).toFixed(1)):''));
-    h+=`<div class="whr"><div class="whd">${d.slice(8)}.${d.slice(5,7)}</div><div class="whv" style="font-weight:600">${v} kg</div><div style="color:var(--muted);font-size:.75rem">${diff}</div></div>`;
+  pts.forEach(([d,v],idx)=>{
+    const prev=pts[idx+1];
+    let diff='';
+    if(prev){
+      const delta=v-prev[1];
+      if(delta>0) diff=`<span style="color:var(--red)">↑${delta.toFixed(1)}</span>`;
+      else if(delta<0) diff=`<span style="color:var(--green)">↓${Math.abs(delta).toFixed(1)}</span>`;
+      else diff=`<span style="color:var(--muted)">→</span>`;
+    }
+    h+=`<div class="whr"><div class="whd">${d.slice(8)}.${d.slice(5,7)}</div><div class="whv" style="font-weight:600">${v} kg</div><div style="font-size:.75rem">${diff}</div></div>`;
   });
   const el=document.getElementById('wList');
   if(el)el.innerHTML=h;
@@ -483,9 +743,14 @@ function wList(){
 // ── JOURNAL ──
 async function jourList(){
   let entries=[];
-  try{entries=await api('GET','/api/journal');}catch(e){}
-  let h=`<textarea class="ji" id="jInp" placeholder="Wie war dein Tag?"></textarea>
-    <button class="wsv" style="width:100%;margin-bottom:1rem" onclick="savJ()">💾 Eintrag</button>`;
+  if(!READONLY){
+    try{entries=await apiCall('GET','/api/journal');}catch(e){}
+  }
+  let h='';
+  if(!READONLY){
+    h+=`<textarea class="ji" id="jInp" placeholder="Wie war dein Tag?"></textarea>
+      <button class="wsv" style="width:100%;margin-bottom:1rem" onclick="savJ()">💾 Eintrag</button>`;
+  }
   if(!entries.length){
     h+='<p style="text-align:center;color:var(--muted);font-size:.8rem">Noch keine Einträge.</p>';
   }else{
@@ -497,9 +762,10 @@ async function jourList(){
 }
 
 async function savJ(){
+  if(READONLY)return;
   const el=document.getElementById('jInp');
   if(!el||!el.value.trim())return;
-  try{await api('POST','/api/journal',{text:el.value.trim(),date:T});toast('📓 gespeichert');await R();}
+  try{await apiCall('POST','/api/journal',{text:el.value.trim(),date:T});toast('📓 gespeichert');await refresh();}
   catch(e){toast('❌ '+e.message);}
 }
 
@@ -511,7 +777,7 @@ function toast(msg){
 }
 
 // ── init ──
-load();
+refresh();
 </script>
 </body>
 </html>
